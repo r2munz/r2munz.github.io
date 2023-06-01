@@ -4,4 +4,4 @@ _site
 .jekyll-metadata
 vendor
 .DS_Store
-sample_*.md
+_posts/sample_*.md
