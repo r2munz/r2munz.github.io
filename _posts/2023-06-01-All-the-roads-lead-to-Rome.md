@@ -103,11 +103,21 @@ You will be able to apply your ruleset to a certain interface in three different
 * LOCAL: this is a special direction as packets coming FROM the interface TOWARDS the local router services (SSH, DNS, DHCP, GUI...) will be filtered accordingly
 * OUT: this direction is rarely used as filtering packets TO the selected interface can be normally achieved by filtering in the IN direction from more suitable interfaces (i.e WAN)
 
-*Name* rules are the ones that are filtering your packets according to some defined criteria based on sources, targets, ports or protocols. 
+*Name* rules are the ones that are filtering your packets according to some defined criteria based on sources, destinations, ports or protocols. 
 On the other hand, *modify* rules are more subtle and advanced to be used (and they cannot be applied by using the GUI, but only through the CLI or the Config Tree). These rules modifies the trajectory of the packets by allowing them to select and use routing tables that differ from the default router routing table. They are very powerful when you want to set up [load-balancing](#wan-failover) or [policy based routing](#pbr). When setting up these rules, one has to pay special attention when creating new internal interfaces that needs to go out in the internet. If you forget to apply these rules to the new interface, this won't work as expected and you'll wonder why without being able to find useful solution on google srtaight the way.
+
+#### NAT
+
+NAT, or Network Address Translation, is a core network service which is used in two directions: Source and Destination.
+
+* Source: also called Masquerade, its most common function is to translate the packets source address from private to a public one. In this way, the packets send out to the internet will know their way back to the host which requested them. In my network, two interfaces are currently natted: WAN and VPN_UNS being the first the link enstablished with my ISP and the second one a VPN link enstablished with an external provider
+* Destination: this function is also called Port Forwarding and it's useful to expose ports, addresses or network groups to your public ip.
 
 
 ### WAN Failover
+
+
+
 ### PBR
 ### OpenVPN Server 
 
