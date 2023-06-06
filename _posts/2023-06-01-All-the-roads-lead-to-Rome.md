@@ -111,11 +111,18 @@ On the other hand, *modify* rules are more subtle and advanced to be used (and t
 
 NAT, or Network Address Translation, is a core network service which is used in two directions: Source and Destination.
 
-* Source: also called Masquerade, its most common function is to translate the packets source address from private to a public one. In this way, the packets send out to the internet will know their way back to the host which requested them. In my network, two interfaces are currently natted: WAN and VPN_UNS being the first the link enstablished with my ISP and the second one a VPN link enstablished with an external provider
+* Source: also called Masquerade, its most common function is to translate the packets source address from private to a public one. In this way, the packets send out to the internet will know their way back to the host which requested them. In my network, three interfaces are currently natted: MWAN, WAN and VPN_UNS being the first ones the link enstablished with my ISP and my Mobile procider respectively and the third one a VPN link enstablished with an external provider called UNS.
 * Destination: this function is also called Port Forwarding and it's useful to expose ports, addresses or network groups to your public ip. As the name is sayng, the router is translating the destination's addresses to reach hosts that are behind the router.
 
 
 ### WAN Failover
+
+Before digging into this section, I want to explain how my cable management obsession got really on the way to set this feature up:
+The second IoT router I am using to provide a mobile WAN link can be powered up by POE, a feature that my managed switch currently supports. This means that in principle, I can get rid of some power cables by relying on power being transmitted over the ethernet cable by my switch. In order to achieve this result, I made a smart use of VLAN tagging:
+ER4 Eth1 interface has been equipped with a VLAN ID = 10. One of the port of my ES8 is receiving this VLAN ID, untagging it on a second port (powered by POE) which connects to the Eth1 interface of RUT240 and excluding it from all the other ports. In this way, I put my RUT240 upstream from the rest of my networks, so it can provide other basic services on its own (DHCP, DNS, NAT). In this way, taking it to vacation as my mobile router is just a matter of unplugging an ethernet cable: my home won't have WAN failover anymore, but you know, when I am not around I won't care so much...
+Clearly, the downside of this configuration is that I am using two switch ports to achieve the purpose.
+
+![port-config](https://lh3.googleusercontent.com/oJXM-0m3Uyv8p4mvaciPLiMhxEYLPHbNjxn9s9Q0IK96fGGQ-poSuo4rXTOzOkZpv8QeDHYL-S_Ycv-PopPWlwphrsUY8kvOYnpy1d_VanystLCZbmLWYQvhmqksJN3mJ9IiD_shwfQ=w2400)
 
 
 
