@@ -1,6 +1,6 @@
-<mxfile host="app.diagrams.net" modified="2023-06-06T08:55:35.832Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/113.0" etag="G_WCxHFEuIY000U2mo-r" version="21.3.7" type="device">
+<mxfile host="app.diagrams.net" modified="2023-06-06T09:07:14.444Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/113.0" etag="C-jSKKOFaiQboQ0dbpf7" version="21.3.7" type="device">
   <diagram name="Pagina-1" id="-6sXGLotGN9ZcCLTFh_m">
-    <mxGraphModel dx="1024" dy="655" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="384" dy="246" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -232,8 +232,8 @@
         <mxCell id="OnRaduhbo4fJ7MF6GFyW-53" value="MWAN (4G)" style="text;strokeColor=none;align=center;fillColor=none;html=1;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
           <mxGeometry x="40" y="228" width="60" height="30" as="geometry" />
         </mxCell>
-        <mxCell id="OnRaduhbo4fJ7MF6GFyW-54" value="DNS (dnsmasq/dnscrypt)" style="text;strokeColor=none;align=center;fillColor=none;html=1;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
-          <mxGeometry x="217" y="585" width="60" height="30" as="geometry" />
+        <mxCell id="OnRaduhbo4fJ7MF6GFyW-54" value="DNS (dnsmasq/dnscrypt)" style="text;strokeColor=none;align=center;fillColor=none;html=1;verticalAlign=middle;whiteSpace=wrap;rounded=0;rotation=90;" vertex="1" parent="1">
+          <mxGeometry x="241" y="624" width="60" height="30" as="geometry" />
         </mxCell>
         <mxCell id="OnRaduhbo4fJ7MF6GFyW-55" value="DHCP" style="text;strokeColor=none;align=center;fillColor=none;html=1;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
           <mxGeometry x="421" y="397" width="60" height="30" as="geometry" />

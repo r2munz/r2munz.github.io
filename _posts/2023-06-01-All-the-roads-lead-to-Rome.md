@@ -97,6 +97,7 @@ Understanding how the firewall rules are applied to the EdgeRouter interfaces is
 
 ![layman-diagram](https://lh3.googleusercontent.com/Wy9xtF-BuOLHKYheLOV6R2BF34kTIsW1KIrKRpWcHQ967APPN2lmsXQcyMapJrwvqFXp_dnJNjucY7oxApGF4PrA11G5f961d9Robevja2-oywhSE66o_tJvfFgWo2GgMMkySo4uE5c=w2400)
 
+
 You will be able to apply your ruleset to a certain interface in three different directions:
 
 * IN: this is probably the most interesting direction as packets coming FROM the selected interface will be filtered accordingly 
@@ -111,7 +112,7 @@ On the other hand, *modify* rules are more subtle and advanced to be used (and t
 NAT, or Network Address Translation, is a core network service which is used in two directions: Source and Destination.
 
 * Source: also called Masquerade, its most common function is to translate the packets source address from private to a public one. In this way, the packets send out to the internet will know their way back to the host which requested them. In my network, two interfaces are currently natted: WAN and VPN_UNS being the first the link enstablished with my ISP and the second one a VPN link enstablished with an external provider
-* Destination: this function is also called Port Forwarding and it's useful to expose ports, addresses or network groups to your public ip.
+* Destination: this function is also called Port Forwarding and it's useful to expose ports, addresses or network groups to your public ip. As the name is sayng, the router is translating the destination's addresses to reach hosts that are behind the router.
 
 
 ### WAN Failover
@@ -120,6 +121,10 @@ NAT, or Network Address Translation, is a core network service which is used in 
 
 ### PBR
 ### OpenVPN Server 
+
+This is an overall, seimplified, representation of the whole topology setup
+
+![network-diagram](https://lh3.googleusercontent.com/3SwYeVWC9LG9At6PiputPAjMd384Dn29Avc98z6Cu5A6rXqCC1gKnC9-qNPPjf4mxCbr2VkPlN-yszBKEw89VOPisQy-e4QjrMzqQ1tJapxHcqNw8K9KLdIEt6MJgoeFeqnxE-dh3Ss=w2400)
 
 [dnscrypt]: https://www.dnscrypt.org/
 [bind]: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/managing_networking_infrastructure_services/assembly_setting-up-and-configuring-a-bind-dns-server_networking-infrastructure-services
