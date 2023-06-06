@@ -125,11 +125,12 @@ Clearly, the downside of this configuration is that I am using two switch ports 
 ![port-config](https://lh3.googleusercontent.com/oJXM-0m3Uyv8p4mvaciPLiMhxEYLPHbNjxn9s9Q0IK96fGGQ-poSuo4rXTOzOkZpv8QeDHYL-S_Ycv-PopPWlwphrsUY8kvOYnpy1d_VanystLCZbmLWYQvhmqksJN3mJ9IiD_shwfQ=w2400)
 
 
-
 ### PBR
 ### OpenVPN Server 
 
-This is an overall, seimplified, representation of the whole topology setup
+### Conclusion
+
+If you made it through here, you have my highest appreciation and recognition for bein so patient and interested. We can summarize what I wrote so far with the following, simplified, representation of the whole topology setup.
 
 ![network-diagram](https://lh3.googleusercontent.com/ocM2iukrjoNIdFjD7DtejEOpew2YtFfUj0SOgISJFwCEHgRGstFHmv4Jd1YoYosszgQDk-pZtMX6gOMXEf0fQvFFl2jVnmiLkAe_SDtizlLRZ_sM6WTGPLlX9-k54gyK1GnW73iIpPc=w2400)
 
