@@ -124,7 +124,7 @@ NAT, or Network Address Translation, is a core network service which is used in 
 
 This is an overall, seimplified, representation of the whole topology setup
 
-![network-diagram](https://lh3.googleusercontent.com/_arExBrXXP3LhS32o_5sEVCv2lovdgt3CpmhttxUzuVW40Hf40LLZIS-Q3MxB_OZ9GseLXEmqI4qaD0igqx_9oMBfx9o3d2qwjDrNLGRjNTD0Ih35GGr-ElXU2Erdip-hvB0wc_oD60=w2400)
+![network-diagram](https://lh3.googleusercontent.com/ocM2iukrjoNIdFjD7DtejEOpew2YtFfUj0SOgISJFwCEHgRGstFHmv4Jd1YoYosszgQDk-pZtMX6gOMXEf0fQvFFl2jVnmiLkAe_SDtizlLRZ_sM6WTGPLlX9-k54gyK1GnW73iIpPc=w2400)
 
 [dnscrypt]: https://www.dnscrypt.org/
 [bind]: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/managing_networking_infrastructure_services/assembly_setting-up-and-configuring-a-bind-dns-server_networking-infrastructure-services
