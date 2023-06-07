@@ -104,14 +104,132 @@ You will be able to apply your ruleset to a certain interface in three different
 * LOCAL: this is a special direction as packets coming FROM the interface TOWARDS the local router services (SSH, DNS, DHCP, GUI...) will be filtered accordingly
 * OUT: this direction is rarely used as filtering packets TO the selected interface can be normally achieved by filtering in the IN direction from more suitable interfaces (i.e WAN)
 
-*Name* rules are the ones that are filtering your packets according to some defined criteria based on sources, destinations, ports or protocols. 
-On the other hand, *modify* rules are more subtle and advanced to be used (and they cannot be applied by using the GUI, but only through the CLI or the Config Tree). These rules modifies the trajectory of the packets by allowing them to select and use routing tables that differ from the default router routing table. They are very powerful when you want to set up [load-balancing](#wan-failover) or [policy based routing](#pbr). When setting up these rules, one has to pay special attention when creating new internal interfaces that needs to go out in the internet. If you forget to apply these rules to the new interface, this won't work as expected and you'll wonder why without being able to find useful solution on google srtaight the way.
+
+Firewall roulesets are *ordered list* of rules, which means that the relative order in which you place these roules is important. The firewall in fact, will read these rules in a sequential order and apply them to packets accordingly.
+
+*Name* rules are the ones that are filtering your packets according to some defined criteria based on sources, destinations, ports or protocols.
+In my network, a bunch of name rouleset are worth mentioning:
+
+* WAN_LOCAL: this rouleset is applied from all the interfaces that are public facing (pppoe, eth1.10, vtun1) towards the local services of the router. Its default action is *drop* followed by Allow Enstablish/Related, Drop Invalid, OpenVPN DNAT on 443 port. From the router console:
+
+```
+configure
+
+set firewall name WAN_LOCAL default-action drop
+set firewall name WAN_LOCAL description 'WAN to router'
+
+set firewall name WAN_LOCAL rule 10 action accept
+set firewall name WAN_LOCAL rule 10 description 'Allow established/related'
+set firewall name WAN_LOCAL rule 10 state established enable
+set firewall name WAN_LOCAL rule 10 state related enable
+
+set firewall name WAN_LOCAL rule 20 action drop
+set firewall name WAN_LOCAL rule 20 description 'Drop invalid state'
+set firewall name WAN_LOCAL rule 20 state invalid enable
+
+set firewall name WAN_LOCAL rule 30 action accept
+set firewall name WAN_LOCAL rule 30 description 'openvpn'
+set firewall name WAN_LOCAL rule 30 protocol udp
+set firewall name WAN_LOCAL rule 30 destination port 443
+
+commit; save
+```
+
+* WAN_IN: this rouleset is applied from all the interfaces that are public facing (pppoe, eth1.10, vtun1) towards the other interfaces of the router. Its default action is *drop* followed by Allow Enstablish/Related, Drop Invalid. From the router console: 
+
+```
+configure
+
+set firewall name WAN_IN default-action drop
+set firewall name WAN_IN description 'WAN to internal'
+
+set firewall name WAN_IN rule 10 action accept
+set firewall name WAN_IN rule 10 description 'Allow established/related'
+set firewall name WAN_IN rule 10 state established enable
+set firewall name WAN_IN rule 10 state related enable
+
+set firewall name WAN_IN rule 20 action drop
+set firewall name WAN_IN rule 20 description 'Drop invalid state'
+set firewall name WAN_IN rule 20 state invalid enable
+
+commit; save
+```
+
+* LAB_IN: this rouleset is applied from the lab interface (eth3.101) towards the other interfaces of the router. Its default action is *drop* followed by Allow Enstablish/Related and Allow the LAB_OUT network group to ALL (addresses/ports/protocols). In this way, the lab hosts are segregated in their own network with the exception of the LAB_OUT network group (a well defined address list). Accessing the lab from the other networks is granted by the Allow Enstablish/Related rule. From the router console: 
+
+```
+configure
+
+set firewall name LAB_IN default-action drop
+set firewall name LAB_IN description 'LAB to internal'
+
+set firewall name LAB_IN rule 10 action accept
+set firewall name LAB_IN rule 10 description 'Allow established/related'
+set firewall name LAB_IN rule 10 state established enable
+set firewall name LAB_IN rule 10 state related enable
+
+set firewall name LAB_IN rule 20 action accept
+set firewall name LAB_IN rule 20 description 'Allow LAB_OUT to ALL'
+set firewall name LAB_IN rule 20 protocol all
+set firewall name LAB_IN rule 20 source group LAB_OUT
+
+commit; save
+```
+
+* GUEST_LOCAL: this rouleset is applied from guest/iot interface (eth3.102) towards the local services of the router. Its default action is *drop* followed by specific rules to allow basic DHCP/DNS services and Allow Enstablish/Related. In this way, IoT devices will be able to retrieve a dynamic IP from the router DHCP server and use its internal DNS to resolve the domain names. Accessing other services (like SSH or webGUI) will be denied. Accessing the guest network from the other networks is granted by the Allow Enstablish/Related rule. Moreover, for the devices sitting on the wi-fi network, host to host comunication will be blocked at the AP level. This [port-isolation][port-isolation] feature could be in principle achieved on cabled devices as well, given the fact I have a L2 managed switch, but I haven't look into this option as I don't really need it. From the router console:
+
+```
+configure
+
+set firewall name GUEST_LOCAL default-action drop
+set firewall name GUEST_LOCAL description 'GUEST to router'
+
+set firewall name GUEST_LOCAL rule 10 action accept
+set firewall name GUEST_LOCAL rule 10 description 'DNS'
+set firewall name GUEST_LOCAL rule 10 destination port 53
+set firewall name GUEST_LOCAL rule 10 protocol tpc_udp
+
+set firewall name GUEST_LOCAL rule 20 action accept
+set firewall name GUEST_LOCAL rule 20 description 'DHCP'
+set firewall name GUEST_LOCAL rule 20 destination port 67
+set firewall name GUEST_LOCAL rule 20 protocol udp
+
+set firewall name GUEST_LOCAL rule 30 action accept
+set firewall name GUEST_LOCAL rule 30 description 'Allow established/related'
+set firewall name GUEST_LOCAL rule 30 state established enable
+set firewall name GUEST_LOCAL rule 30 state related enable
+
+commit; save
+```
+
+* GUEST_IN: this rouleset is applied from guest/iot interface (eth3.102) towards the other interfaces of the router. Its default action is *accept* followed by specific rules to allow for exceptions (i.e: my guests should be able to use the printers) and drop all the packets that are trying to access other internal networks. Internal networks are defined in a networkgroup called RFC1918 and includes all private IP subranges. From the router console:
+
+```
+configure
+
+set firewall name GUEST_IN default-action accept
+set firewall name GUEST_IN description 'GUEST to LAN'
+
+set firewall name GUEST_IN rule 10 action accept
+set firewall name GUEST_IN rule 10 description 'Guest to PRINTERS'
+set firewall name GUEST_IN rule 10 destination group PRINTERS	
+set firewall name GUEST_IN rule 10 protocol all
+
+set firewall name GUEST_IN rule 20 action drop
+set firewall name GUEST_IN rule 20 description 'Guest to RFC1918'
+set firewall name GUEST_IN rule 20 destination group RFC1918
+set firewall name GUEST_IN rule 20 protocol all
+
+commit; save
+```
+
+On the other hand, *modify* rules are more subtle and advanced to be used (and they cannot be applied by using the GUI, but only through the CLI or the Config Tree). These rules modifies the trajectory of the packets by allowing them to select and use routing tables that differ from the default router routing table. They are very powerful when you want to set up [load-balancing](#wan-failover) or [policy based routing](#pbr). When setting up these rules, one has to pay special attention when creating new internal interfaces that needs to go out to the internet. If you forget to apply these rules to freshly created interfaces, these won't work as expected and you'll wonder why without being able to find useful solution on google srtaight the way.
 
 #### NAT
 
 NAT, or Network Address Translation, is a core network service which is used in two directions: Source and Destination.
 
-* Source: also called Masquerade, its most common function is to translate the packets source address from private to a public one. In this way, the packets send out to the internet will know their way back to the host which requested them. In my network, three interfaces are currently natted: MWAN, WAN and VPN_UNS being the first ones the link enstablished with my ISP and my Mobile procider respectively and the third one a VPN link enstablished with an external provider called UNS.
+* Source: also called Masquerade, its most common function is to translate the packets source address from private to a public one. In this way, the packets send out to the internet will know their way back to the host which requested them. In my network, two public facing interfaces are currently natted: pppoe and vtun1 being the first ones the link enstablished with my ISP and the second one a VPN link enstablished with an external provider called UNS.
 * Destination: this function is also called Port Forwarding and it's useful to expose ports, addresses or network groups to your public ip. As the name is sayng, the router is translating the destination's addresses to reach hosts that are behind the router.
 
 
@@ -130,7 +248,7 @@ Clearly, the downside of this configuration is that I am using two switch ports 
 
 ### Conclusion
 
-If you made it through here, you have my highest appreciation and recognition for bein so patient and interested. We can summarize what I wrote so far with the following, simplified, representation of the whole topology setup.
+If you made it through here, well congratulations! You have my highest appreciation and recognition for bein so patient and interested. We can summarize what I wrote so far with the following, simplified, representation of the whole topology setup.
 
 ![network-diagram](https://lh3.googleusercontent.com/ocM2iukrjoNIdFjD7DtejEOpew2YtFfUj0SOgISJFwCEHgRGstFHmv4Jd1YoYosszgQDk-pZtMX6gOMXEf0fQvFFl2jVnmiLkAe_SDtizlLRZ_sM6WTGPLlX9-k54gyK1GnW73iIpPc=w2400)
 
@@ -142,3 +260,4 @@ If you made it through here, you have my highest appreciation and recognition fo
 [er-dhcp-custom-options]: https://help.ui.com/hc/en-us/articles/204960074-EdgeRouter-Custom-DHCP-Server-Options
 [dnscrypt-edgerouter]: https://github.com/darkgrue/Ubiquiti-DNSCrypt-Proxy-2-Configuration-Scripts
 [dnscrypt-utils]: https://github.com/DNSCrypt/dnscrypt-proxy/tree/master/utils/generate-domains-blocklist
+[port-isolation]: https://help.ui.com/hc/en-us/articles/360039311974-EdgeSwitch-EdgeSwitch-X-Port-Isolation
