@@ -87,7 +87,7 @@ Common options, like setting PXE boot server on the LAN (i.e. 66, 67), are confi
 
 #### DNS
 
-I decided to delegate DNS serving to my little and beloved RasPi. ER4 could serve the purpose as well, but using dnscrypt on it becomes clunky and difficult to [maintain][dnscrypt-edgerouter]. On the RaspPi instead, dnsproxy runs as a breeze and it is quite straightforward to update daily your [blacklist][dnscrypt-utils] with a daily cronjob. Dnscrypt is the right choice if you don't like to be profiled by your ISP. Your DNS queries will be always encrypted and your privacy will be therefore guaranteed. On top of that, dnscrypt blacklist support the use of wildcards, which makes them really handy to use. Using blacklists is quite useful if you want your network to be protected from malware sites, ads, aldult contents streaming on your kids devices and so on...
+I decided to delegate DNS serving to my little and beloved RasPi. ER4 could serve the purpose as well, but using dnscrypt on it becomes clunky and difficult to [maintain][dnscrypt-edgerouter]. On the RaspPi instead, dnsproxy runs as a breeze and it is quite straightforward to update your [blacklist][dnscrypt-utils] with a daily cronjob. Dnscrypt is the right choice if you don't like to be profiled by your ISP. Your DNS queries will be always encrypted and your privacy will be therefore guaranteed. On top of that, dnscrypt blacklist support the use of wildcards, which makes them really handy to use. Using blacklists is quite useful if you want your network to be protected from malware sites, ads, aldult contents streaming on your kids devices and so on...
 
 As a general approach I have decided to delegate dnsmasq to resolve all the internal names for my network, looking up on the RasPi `/etc/hosts` table, and forward all the rest to dnscrypt. 
 
@@ -242,15 +242,68 @@ Clearly, the downside of this configuration is that I am using two switch ports 
 
 ![port-config](https://lh3.googleusercontent.com/oJXM-0m3Uyv8p4mvaciPLiMhxEYLPHbNjxn9s9Q0IK96fGGQ-poSuo4rXTOzOkZpv8QeDHYL-S_Ycv-PopPWlwphrsUY8kvOYnpy1d_VanystLCZbmLWYQvhmqksJN3mJ9IiD_shwfQ=w2400)
 
+WAN failover is achieved by creating a load balance group in which the two interfaces are defined. The load balance group has a tons of useful options, but I am going to use the failover-only one for this scope.
 
 ### PBR
+
+
+
+```
+configure
+
+set network group LAN description "Local area networks"
+set network group LAN network 192.168.100.0/24
+set network group LAN network 192.168.101.0/24
+set network group LAN network 192.168.102.0/24
+set network group LAN network 10.0.10.0/24
+
+set network group LAN_VPN description "Members of LAN which access UN VPN"
+set network group LAN network 192.168.103.0/24
+
+set network group RFC1918 description "Private networks"
+set network group RFC1918 network 10.0.0.0/8
+set network group RFC1918 network 172.16.0.0/12
+set network group RFC1918 network 192.168.0.0/16
+
+set load-balance group LB1 interface eth1.10 failover-only
+set load-balance group LB1 interface pppoe0
+
+set protocols static table 10 interface-route 0.0.0.0/0 next-hop-interface pppoe0
+set protocols static table 10 description "WAN table"
+set protocols static table 20 interface-route 0.0.0.0/0 next-hop-interface vtun1
+set protocols static table 20 description "UN-VPN table"
+
+set firewall modify PBR rule 5 action modify
+set firewall modify PBR rule 5 description "Route all traffic to RFC1918 netowrks via main table"
+set firewall modify PBR rule 5 destination group network-group RFC1918
+set firewall modify PBR rule 5 modify table main
+
+set firewall modify PBR rule 10 action modify
+set firewall modify PBR rule 10 description "Route traffic from group LAN-VPN through UN-VPN table"
+set firewall modify PBR rule 10 destination group address-group LAN-VPN
+set firewall modify PBR rule 10 modify table 20
+
+set firewall modify PBR rule 20 action modify
+set firewall modify PBR rule 20 description "Route traffic from group LAN through WAN table"
+set firewall modify PBR rule 20 destination group address-group LAN
+set firewall modify PBR rule 20 modify table 10
+
+set firewall modify PBR rule 100 action modify
+set firewall modify PBR rule 100 modify lb-group LB1
+
+set interfaces ethernet eth3 firewall in modify PBR
+set interfaces ethernet eth3.101 firewall in modify PBR
+set interfaces ethernet eth3.102 firewall in modify PBR
+set interfaces ethernet eth3.103 firewall in modify PBR
+set interfaces ethernet vtun0 firewall in modify PBR
+```
 ### OpenVPN Server 
 
 ### Conclusion
 
 If you made it through here, well congratulations! You have my highest appreciation and recognition for bein so patient and interested. We can summarize what I wrote so far with the following, simplified, representation of the whole topology setup.
 
-![network-diagram](https://lh3.googleusercontent.com/ocM2iukrjoNIdFjD7DtejEOpew2YtFfUj0SOgISJFwCEHgRGstFHmv4Jd1YoYosszgQDk-pZtMX6gOMXEf0fQvFFl2jVnmiLkAe_SDtizlLRZ_sM6WTGPLlX9-k54gyK1GnW73iIpPc=w2400)
+![network-diagram](https://lh3.googleusercontent.com/IxTN3jFCYBMwRaKSO56eUQCZChl2Osn_fVrJNEBeazanDF8z2Lmhc5-bc85B1eDTtXTaZIXe-MZpzR6M_0PbGKXGdtZB4FmwPSgcupnhnTN0-u8HFXVyK5oazzxO5j5BwggQfoXRKrI=w2400)
 
 [dnscrypt]: https://www.dnscrypt.org/
 [bind]: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/managing_networking_infrastructure_services/assembly_setting-up-and-configuring-a-bind-dns-server_networking-infrastructure-services

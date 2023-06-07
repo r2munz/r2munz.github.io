@@ -4,7 +4,8 @@ layout: page
 title: About me
 ---
 
-<img src="./assets/imgs/david.jpg" width="400px">
+
+![David](https://lh3.googleusercontent.com/pw/AJFCJaWOep0ReXoGk9UkdjSPSj9XZD4rT0bxjL0IKOFxKBUvGsG8XemAjOb43v42zbSJ2eFAkAelomDwzURO5VcwwoqHMwxDpiSuFFBpSMu56VLH-a2k3o70=w450)
 
 Scientist. 
 
