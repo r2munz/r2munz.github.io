@@ -242,11 +242,12 @@ Clearly, the downside of this configuration is that I am using two switch ports 
 
 ![port-config](https://lh3.googleusercontent.com/oJXM-0m3Uyv8p4mvaciPLiMhxEYLPHbNjxn9s9Q0IK96fGGQ-poSuo4rXTOzOkZpv8QeDHYL-S_Ycv-PopPWlwphrsUY8kvOYnpy1d_VanystLCZbmLWYQvhmqksJN3mJ9IiD_shwfQ=w2400)
 
-WAN failover is achieved by creating a load balance group in which the two interfaces are defined. The load balance group has a tons of useful options, but I am going to use the failover-only one for this scope.
+WAN failover is achieved by creating a load balance group in which the two interfaces are defined. The load balance group has a tons of useful options, but I am going to use the failover-only one for this scope. The commands issued to set this feature up are going to be summarized in the [next section][#pbr].
 
 ### PBR
 
-
+Policy based routing is a powerful feature that allows your packets to be re-routed according to some specific network policies. In my setup, I wanted a very specific VLAN to be routed out on the internet via a virtual private tunnel. In this way, all the hosts connected to the network sitting on that VLAN tunnel the usual WAN link and be able to appear having another public address. In this way several geolocalization and privacy restriction can be worked around.
+Say you would like to watch the US Netflix catalogue. Without having to install the ovpn profile on all the devices that would like to do that, it is enough to connect these devices to that internal network. In order to set up PBR and WAN failover, these are the commands I have used from a router console:
 
 ```
 configure
@@ -296,8 +297,15 @@ set interfaces ethernet eth3.101 firewall in modify PBR
 set interfaces ethernet eth3.102 firewall in modify PBR
 set interfaces ethernet eth3.103 firewall in modify PBR
 set interfaces ethernet vtun0 firewall in modify PBR
+
+commit; save
 ```
+
 ### OpenVPN Server 
+
+Setting up an OpenVPN server at the edge of the network is something very convenient. First of all because your router is going to be likely always on, so you don't need to power up a separated device to achieve that role and he is going to take care of the computational effort of encrypting/decrypting the traffic through the tunnel. The most obvious reason though, is that you'll be able to access you local devices and services remotely. This will probably help you get around some stupid password sharing policies set up by streaming companies.
+I have created my personal PKI (Private Key Infrastructure) on my RasPi by means of the [easy-rsa][easy-rsa] bundle. So I created my CA (Certificate Authority) through which I can sign, renew and revoke requests. Certificates will be then used to compile ovpn profiles to be installed in the devices that will be allowed to connect to my OpenVPN server.
+
 
 ### Conclusion
 
@@ -314,3 +322,4 @@ If you made it through here, well congratulations! You have my highest appreciat
 [dnscrypt-edgerouter]: https://github.com/darkgrue/Ubiquiti-DNSCrypt-Proxy-2-Configuration-Scripts
 [dnscrypt-utils]: https://github.com/DNSCrypt/dnscrypt-proxy/tree/master/utils/generate-domains-blocklist
 [port-isolation]: https://help.ui.com/hc/en-us/articles/360039311974-EdgeSwitch-EdgeSwitch-X-Port-Isolation
+[easy-rsa]: https://github.com/OpenVPN/easy-rsa
