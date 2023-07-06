@@ -1,6 +1,6 @@
 ---
 title: "All the roads lead to Rome - How I routed my home network"
-date: 2020-03-18
+date: 2023-07-01
 layout: post
 ---
 
