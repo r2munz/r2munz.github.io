@@ -242,7 +242,7 @@ Clearly, the downside of this configuration is that I am using two switch ports 
 
 ![port-config](https://lh3.googleusercontent.com/oJXM-0m3Uyv8p4mvaciPLiMhxEYLPHbNjxn9s9Q0IK96fGGQ-poSuo4rXTOzOkZpv8QeDHYL-S_Ycv-PopPWlwphrsUY8kvOYnpy1d_VanystLCZbmLWYQvhmqksJN3mJ9IiD_shwfQ=w2400)
 
-WAN failover is achieved by creating a load balance group in which the two interfaces are defined. The load balance group has a tons of useful options, but I am going to use the failover-only one for this scope. The commands issued to set this feature up are going to be summarized in the [next section][#pbr].
+WAN failover is achieved by creating a load balance group in which the two interfaces are defined. The load balance group has a tons of useful options, but I am going to use the failover-only one for this scope. The commands issued to set this feature up are going to be summarized in the [next section](#pbr).
 
 ### PBR
 
