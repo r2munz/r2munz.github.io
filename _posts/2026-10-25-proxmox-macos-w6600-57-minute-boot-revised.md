@@ -1,10 +1,17 @@
 ---
+
 layout: post
+
 title: "A 57-Minute macOS Boot on Proxmox: Tracing a Radeon GPU Passthrough Stall to XNU's Video Console"
+
 date: 2026-10-25
+
 categories: [homelab, virtualization, macos]
+
 tags: [proxmox, hackintosh, opencore, qemu, kvm, amd, gpu-passthrough, xnu, debugging]
+
 description: "Upgrading a stable RX 580 passthrough Hackintosh to a Radeon PRO W6600 exposed a 57-minute boot delay. QEMU CPU profiling and XNU symbols revealed the cause."
+
 ---
 
 # A 57-Minute macOS Boot on Proxmox: Tracing a Radeon GPU Passthrough Stall to XNU's Video Console
@@ -68,6 +75,7 @@ But the boot logs showed:
 The fastest way to get diagnostic access was to enable an emulated VMware SVGA display temporarily:
 
 - **VMware SVGA enabled:** the guest became usable in under a minute, and the W6600 appeared as a PCI graphics device, but its physical DisplayPort monitors were black.
+
 - **VMware SVGA disabled (`vga: none`):** the guest took roughly 57 minutes, but the original OpenCore configuration eventually produced real DisplayPort output and acceleration.
 
 This was a useful controlled contrast, although other OpenCore versions had also been tested during the broader troubleshooting effort.
@@ -94,11 +102,15 @@ The running VM originally exposed QEMU's `isa-applesmc` **and** loaded VirtualSM
 
 That test was illuminating but unsuccessful:
 
-| Observation | With QEMU AppleSMC | Without QEMU AppleSMC |
-|---|---|---|
-| Time until SSH | About 57 minutes | 57 minutes 40 seconds |
-| Physical W6600 displays | Worked in the known-good boot | Remained unavailable in the test |
-| macOS AppleSMC mode | PMIO | MMIO |
+\| Observation | With QEMU AppleSMC | Without QEMU AppleSMC |
+
+\|---|---|---|
+
+\| Time until SSH | About 57 minutes | 57 minutes 40 seconds |
+
+\| Physical W6600 displays | Worked in the known-good boot | Remained unavailable in the test |
+
+\| macOS AppleSMC mode | PMIO | MMIO |
 
 This showed that the SMC path changed, **but it did not fix the startup delay**. We restored the original QEMU configuration. A single failed graphics boot is not enough to conclude that removing AppleSMC always breaks physical output; it simply was not a useful fix here.
 
@@ -125,10 +137,8 @@ Here is a reusable *read-only* Proxmox-side sampling script:
 ```python
 import time
 from pathlib import Path
-
 pid = Path('/var/run/qemu-server/500.pid').read_text().strip()
 taskdir = Path(f'/proc/{pid}/task')
-
 def sample():
     result = {}
     for task in taskdir.iterdir():
@@ -139,7 +149,6 @@ def sample():
         except (OSError, ValueError):
             pass
     return result
-
 before = sample()
 time.sleep(5)
 after = sample()
@@ -185,6 +194,7 @@ xor  r9d, esi
 and  r9d, r8d
 xor  r9d, esi
 mov  dword ptr [rdi+4], r9d
+mov  r8d, dword ptr [rax+8]
 ```
 
 Initially this looked like generic bitwise computation—possibly a cryptographic primitive. Without symbols, that guess was not reliable.
@@ -193,46 +203,99 @@ We also tried following frame pointers through guest stack memory, but some appa
 
 ## Symbolication: the actual function was drawing text
 
-The guest ran:
+### Extracting the machine-code signature
+
+Before searching the KDK kernel, we needed a reliable way to identify the code that the stalled VM was executing. Since the exact Kernel Debug Kit for macOS Sequoia 15.7.2 (build `24G325`) was unavailable, we couldn't directly symbolicate the guest's runtime instruction addresses against matching debug symbols.
+
+Instead, we used **machine-code signature matching**: extract a sequence of raw instructions from the running guest and look for the same sequence in a nearby macOS kernel version for which matching debug symbols were available.
+
+While vCPU 1 was consuming 100% CPU, QEMU's monitor repeatedly showed its instruction pointer (`RIP`) inside a small region of kernel memory around `0xffffff800d300900`. We inspected that region using QEMU's memory examination command:
 
 ```text
-macOS Sequoia 15.7.2 (24G325)
-Darwin 24.6.0
-Kernel UUID: 90688F0F-33FC-3A1A-8DB6-EF9F59DBA1A9
+qm monitor 500
+qm> cpu 1
+qm> x/64xb 0xffffff800d3008c0
 ```
 
-Apple's download portal did not offer a Kernel Debug Kit (KDK) for that exact build. I downloaded **KDK 15.7.3 (24G419)** on another Mac instead. Its kernel binary and `.dSYM` agreed with each other, but **their UUID did not match the guest**. This means the KDK cannot be used for direct, exact address symbolication of the guest kernel.
+The relevant portion of the captured memory dump was:
 
-Instead, I searched the nearby KDK kernel **for an exact sequence of machine-code bytes** captured from the stalled vCPU:
+```text
+ffffff800d3008c0: 31 d2 8b 35 f8 31 e9 00 44 8b 0d f5 31 e9 00 41
+ffffff800d3008d0: 31 f1 45 21 c1 41 31 f1 44 89 4f 04 44 8b 40 08
+ffffff800d3008e0: 48 85 d2 74 1b 48 8d 72 04 44 3b 02 75 14 44 8b
+```
+
+We selected **17 consecutive bytes beginning at guest virtual address `0xffffff800d3008cf`**. Notice that the sequence starts with the final byte (`41`) of the first dump line and continues through the entire second line:
+
+```text
+41 31 f1 45 21 c1 41 31 f1 44 89 4f 04 44 8b 40 08
+```
+
+This detail matters: the signature crosses a line boundary in the QEMU output, which makes it easy to overlook where the bytes originated.
+
+We then searched the x86-64 kernel binary extracted from Apple's macOS Sequoia 15.7.3 KDK (build `24G419`) using Python:
 
 ```python
 from pathlib import Path
-
-kernel = Path('path/to/KDK/System/Library/Kernels/kernel')
+kernel = Path("path/to/KDK/System/Library/Kernels/kernel")
 pattern = bytes.fromhex(
-    '41 31 f1 45 21 c1 41 31 f1 '
-    '44 89 4f 04 44 8b 40 08'
+    "41 31 f1 45 21 c1 41 31 f1 "
+    "44 89 4f 04 44 8b 40 08"
 )
 data = kernel.read_bytes()
-print(data.find(pattern))  # one match, at file offset 0x2179df
+matches = []
+offset = 0
+while (offset := data.find(pattern, offset)) != -1:
+    matches.append(offset)
+    offset += 1
+print(f"Kernel size: {len(data):,} bytes")
+print(f"Exact matches: {len(matches)}")
+for match in matches:
+    print(f"File offset: 0x{match:x}")
 ```
 
-There was exactly **one match** in the 18,355,376-byte kernel. Mapping its Mach-O file offset into the `__TEXT` segment produced virtual address `0xffffff80004179df`. Using the 15.7.3 KDK's own matching `.dSYM` yielded:
+The result was remarkably precise:
+
+```text
+Kernel size: 18,355,376 bytes
+Exact matches: 1
+File offset: 0x2179df
+```
+
+**One exact match in an 18.4 MB kernel binary.**
+
+That file offset was then translated into a virtual address using the Mach-O `__TEXT` segment's file-offset and virtual-address mapping:
+
+```text
+Segment:         __TEXT
+File offset:     0x2179df
+Virtual address: 0xffffff80004179df
+Section:         __text
+```
+
+Finally, we looked up the address using the matching 15.7.3 KDK debug symbols:
+
+```bash
+xcrun atos -arch x86_64 \
+  -o kernel.dSYM/Contents/Resources/DWARF/kernel \
+  0xffffff80004179df
+```
+
+The result:
 
 ```text
 vc_paint_char (in kernel) (video_console.c:1632)
 ```
 
-The DWARF lookup further identified an **inlined** helper:
+A further DWARF lookup identified the inlined helper function `vc_paint_char_32`, implemented in `osfmk/console/video_console.c`.
 
-```text
-vc_paint_char_32
-Source: xnu/osfmk/console/video_console.c
-```
+**We had identified the kernel's video-console character renderer as the execution hotspot.** The instructions repeatedly consuming an entire virtual CPU core belonged to code responsible for drawing characters into a 32-bit framebuffer.
 
-**That was the breakthrough.** The busy vCPU was executing code matching XNU's **32-bit video-console character painter**. The bitwise masking and stores weren't hashing data: they were consistent with painting characters into a framebuffer.
+One important qualification: **this was not exact symbolication of the guest's kernel**. The running VM used build `24G325`, while our KDK was from build `24G419`, and their kernel UUIDs differed. The unique instruction-byte match provided strong evidence that we had identified the corresponding routine, but it did not prove the surrounding machine code was identical across both builds.
 
-> **Technical precision:** This was a unique *code-pattern match* between different macOS kernel builds, not an exact symbolication of build 24G325. The source attribution is strong evidence for the hotspot; the next boot test established whether verbose rendering explained the pathological elapsed time.
+Nevertheless, it gave us a concrete, testable hypothesis: perhaps rendering verbose boot messages directly through the passed-through Radeon PRO W6600 framebuffer was responsible for the extraordinary boot delay.
+
+That led directly to our next experiment: **removing the `-v` boot argument from OpenCore**.
 
 ## One boot argument fixed it
 
@@ -269,13 +332,19 @@ The evidence strongly supports that interpretation, **but we did not benchmark i
 
 ## Practical troubleshooting checklist
 
-1. **Measure the supposedly stuck phase.** A screen that says `PCI configuration begin` does not prove the kernel is still enumerating PCI devices. Search logs for the corresponding end timestamp.
-2. **Compare one variable at a time.** A fast emulated display can isolate the physical framebuffer path, but avoid changing OpenCore, GPU settings, and kexts simultaneously.
-3. **Observe the VM from the host during the stall.** Check memory pressure, disk activity, and per-vCPU CPU utilization. A single hot vCPU changes the investigation completely.
-4. **Inspect the guest execution hotspot.** QEMU's `info registers` and `x/` can provide useful data even when the monitor cannot disassemble instructions.
-5. **Symbolicate carefully.** Confirm matching kernel and dSYM UUIDs. If the guest build's KDK is unavailable, a unique machine-code match in a nearby build is useful for *identification*, but not exact symbolication.
-6. **Test the smallest hypothesis.** Here, removing `-v`—not changing PCI settings, power management, or GPU properties—was the winning experiment.
-7. **Save the working baseline.** Back up both the VM and its EFI before updating OpenCore or macOS.
+1\. **Measure the supposedly stuck phase.** A screen that says `PCI configuration begin` does not prove the kernel is still enumerating PCI devices. Search logs for the corresponding end timestamp.
+
+2\. **Compare one variable at a time.** A fast emulated display can isolate the physical framebuffer path, but avoid changing OpenCore, GPU settings, and kexts simultaneously.
+
+3\. **Observe the VM from the host during the stall.** Check memory pressure, disk activity, and per-vCPU CPU utilization. A single hot vCPU changes the investigation completely.
+
+4\. **Inspect the guest execution hotspot.** QEMU's `info registers` and `x/` can provide useful data even when the monitor cannot disassemble instructions.
+
+5\. **Symbolicate carefully.** Confirm matching kernel and dSYM UUIDs. If the guest build's KDK is unavailable, a unique machine-code match in a nearby build is useful for *identification*, but not exact symbolication.
+
+6\. **Test the smallest hypothesis.** Here, removing `-v`—not changing PCI settings, power management, or GPU properties—was the winning experiment.
+
+7\. **Save the working baseline.** Back up both the VM and its EFI before updating OpenCore or macOS.
 
 ## What this taught me
 
@@ -288,8 +357,13 @@ If you're running macOS on Proxmox with a physical GPU and a mysteriously long v
 ### References
 
 - [Apple XNU source: `video_console.c`](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/console/video_console.c)
+
 - [Apple Developer Downloads (Kernel Debug Kits)](https://developer.apple.com/download/all/)
+
 - [OpenCorePkg releases](https://github.com/acidanthera/OpenCorePkg/releases)
+
 - [WhateverGreen releases](https://github.com/acidanthera/WhateverGreen/releases)
+
 - [Lilu releases](https://github.com/acidanthera/Lilu/releases)
+
 - [Proxmox VE QEMU/KVM manual](https://pve.proxmox.com/pve-docs/qm.1.html)
