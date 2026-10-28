@@ -257,6 +257,8 @@ The change was made **offline**: stop the VM, resolve its EFI disk with `pvesm p
 
 On the next startup, **macOS came up quickly, the physical W6600 display worked, and the system was usable with graphics acceleration**. A ping monitor recorded the guest switching from OFFLINE at **17:44:30** to ONLINE at **17:45:31**; those samples bracket network availability, not the exact elapsed time from the `qm start` command. The visual result was immediate enough to be unmistakable compared with the former ~57-minute behavior.
 
+![About This Mac on the finished VM: Sequoia, 64 GiB RAM, and the passed-through Radeon PRO W6600—serial and other identifying details redacted.](/assets/imgs/working_VM.png)
+
 Once stable, I upgraded OpenCore and its Lilu/WhateverGreen dependencies to newer **RELEASE** versions. The fast-boot, accelerated W6600 configuration continued working. This also explains why earlier OpenCore-version experiments were misleading: the verbose-console issue was still present.
 
 ## Why `vga: vmware` masked the problem
