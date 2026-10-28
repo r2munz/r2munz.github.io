@@ -1,17 +1,10 @@
 ---
-
 layout: post
-
 title: "A 57-Minute macOS Boot on Proxmox: Tracing a Radeon GPU Passthrough Stall to XNU's Video Console"
-
 date: 2026-10-25
-
 categories: [homelab, virtualization, macos]
-
 tags: [proxmox, hackintosh, opencore, qemu, kvm, amd, gpu-passthrough, xnu, debugging]
-
 description: "Upgrading a stable RX 580 passthrough Hackintosh to a Radeon PRO W6600 exposed a 57-minute boot delay. QEMU CPU profiling and XNU symbols revealed the cause."
-
 ---
 
 # A 57-Minute macOS Boot on Proxmox: Tracing a Radeon GPU Passthrough Stall to XNU's Video Console
@@ -187,7 +180,7 @@ qm> cpu 1
 qm> x/64xb 0xffffff800d300900
 ```
 
-The captured bytes contained repeated 32-bit bitwise selection and pixel-like stores. One portion decoded to:
+The captured bytes contained repeated 32-bit bitwise selection and pixel-like stores. The five-instruction signature shown below decoded to:
 
 ```asm
 xor  r9d, esi
@@ -203,13 +196,11 @@ We also tried following frame pointers through guest stack memory, but some appa
 
 ## Symbolication: the actual function was drawing text
 
-### Extracting the machine-code signature
+### 1. Obtain a recognizable instruction sequence
 
-Before searching the KDK kernel, we needed a reliable way to identify the code that the stalled VM was executing. Since the exact Kernel Debug Kit for macOS Sequoia 15.7.2 (build `24G325`) was unavailable, we couldn't directly symbolicate the guest's runtime instruction addresses against matching debug symbols.
+The guest was running macOS Sequoia **15.7.2 (24G325)**, but an exact matching Kernel Debug Kit (KDK) was unavailable to us. We obtained the nearby **15.7.3 (24G419)** KDK, containing an x86-64 `kernel` and a matching `kernel.dSYM`. The KDK kernel and its dSYM shared UUID `CF5BCFF5-37A8-32C6-96D4-F6FDC871BAB8`; the running guest kernel's UUID was different (`90688F0F-33FC-3A1A-8DB6-EF9F59DBA1A9`). We therefore **could not** reliably use the guest's live RIP as an address in the KDK dSYM.
 
-Instead, we used **machine-code signature matching**: extract a sequence of raw instructions from the running guest and look for the same sequence in a nearby macOS kernel version for which matching debug symbols were available.
-
-While vCPU 1 was consuming 100% CPU, QEMU's monitor repeatedly showed its instruction pointer (`RIP`) inside a small region of kernel memory around `0xffffff800d300900`. We inspected that region using QEMU's memory examination command:
+Instead, we extracted instruction bytes *from the guest* and searched for that **same code sequence** in the nearby KDK kernel *on disk*. While vCPU 1 was busy, QEMU reported RIP values clustered around `0xffffff800d300900`. Using the monitor, we read executable memory near the observed addresses:
 
 ```text
 qm monitor 500
@@ -217,7 +208,7 @@ qm> cpu 1
 qm> x/64xb 0xffffff800d3008c0
 ```
 
-The relevant portion of the captured memory dump was:
+From the captured output:
 
 ```text
 ffffff800d3008c0: 31 d2 8b 35 f8 31 e9 00 44 8b 0d f5 31 e9 00 41
@@ -225,36 +216,59 @@ ffffff800d3008d0: 31 f1 45 21 c1 41 31 f1 44 89 4f 04 44 8b 40 08
 ffffff800d3008e0: 48 85 d2 74 1b 48 8d 72 04 44 3b 02 75 14 44 8b
 ```
 
-We selected **17 consecutive bytes beginning at guest virtual address `0xffffff800d3008cf`**. Notice that the sequence starts with the final byte (`41`) of the first dump line and continues through the entire second line:
+**Why 17 bytes?** There is no special 17-byte requirement. We chose **five consecutive, complete x86-64 instructions**: long enough to be distinctive, short enough to have a chance of remaining identical across nearby kernel builds. QEMU prints **16 bytes per output row**, not one instruction per row. The first instruction begins with `41` at address `0xffffff800d3008cf`, the **last byte of the `...08c0` row**, followed by the 16 bytes of the `...08d0` row:
 
 ```text
 41 31 f1 45 21 c1 41 31 f1 44 89 4f 04 44 8b 40 08
 ```
 
-This detail matters: the signature crosses a line boundary in the QEMU output, which makes it easy to overlook where the bytes originated.
+The `41` is the x86-64 REX prefix of the first instruction. Disassembling that exact sequence in **Intel operand order** gives:
 
-We then searched the x86-64 kernel binary extracted from Apple's macOS Sequoia 15.7.3 KDK (build `24G419`) using Python:
+```asm
+41 31 f1       xor  r9d, esi
+45 21 c1       and  r9d, r8d
+41 31 f1       xor  r9d, esi
+44 89 4f 04    mov  dword ptr [rdi+4], r9d
+44 8b 40 08    mov  r8d, dword ptr [rax+8]
+```
+
+For example, to check the bytes with GNU `objdump` on Linux:
+
+```bash
+printf '%b' '\x41\x31\xf1\x45\x21\xc1\x41\x31\xf1\x44\x89\x4f\x04\x44\x8b\x40\x08' > signature.bin
+objdump -D -b binary -m i386:x86-64 -M intel signature.bin
+```
+
+Longer signatures can reduce false matches, but may break if a compiler changes even one instruction. Shorter signatures may match unrelated code. We tested our candidate for uniqueness rather than assuming the length was sufficient.
+
+### 2. Search the nearby KDK kernel for the same bytes
+
+After extracting the 15.7.3 KDK package on another Mac, we searched its **x86-64 kernel executable**, not the `.dSYM` file:
 
 ```python
 from pathlib import Path
-kernel = Path("path/to/KDK/System/Library/Kernels/kernel")
+
+kernel = (Path.home() / "KDK-analysis/extracted/KDK.pkg/Payload"
+          / "System/Library/Kernels/kernel")
 pattern = bytes.fromhex(
     "41 31 f1 45 21 c1 41 31 f1 "
     "44 89 4f 04 44 8b 40 08"
 )
+
 data = kernel.read_bytes()
 matches = []
-offset = 0
-while (offset := data.find(pattern, offset)) != -1:
-    matches.append(offset)
-    offset += 1
+pos = 0
+while (pos := data.find(pattern, pos)) != -1:
+    matches.append(pos)
+    pos += 1
+
 print(f"Kernel size: {len(data):,} bytes")
 print(f"Exact matches: {len(matches)}")
-for match in matches:
-    print(f"File offset: 0x{match:x}")
+for pos in matches:
+    print(f"File offset: 0x{pos:x}")
 ```
 
-The result was remarkably precise:
+Actual result:
 
 ```text
 Kernel size: 18,355,376 bytes
@@ -262,9 +276,73 @@ Exact matches: 1
 File offset: 0x2179df
 ```
 
-**One exact match in an 18.4 MB kernel binary.**
+**`0x2179df` is a file offset**, measured from the beginning of the 15.7.3 KDK's `kernel` file. It is *not* an address from the running VM. The signature had one occurrence **within that searched binary**; uniqueness alone does not guarantee the nearby build is identical to the guest build.
 
-That file offset was then translated into a virtual address using the Mach-O `__TEXT` segment's file-offset and virtual-address mapping:
+### 3. Convert the file offset into a Mach-O virtual address
+
+Apple's x86-64 kernel executable is Mach-O. An `LC_SEGMENT_64` load command records how a segment's bytes are laid out **on disk** (`fileoff`, `filesize`) and where the segment lives in the image's **unslid virtual address space** (`vmaddr`, `vmsize`). The offset must be mapped through the segment that contains it **before** giving it to `atos`.
+
+On the Mac with the extracted KDK, inspect the segment load commands:
+
+```bash
+KERNEL="$HOME/KDK-analysis/extracted/KDK.pkg/Payload/System/Library/Kernels/kernel"
+xcrun otool -l "$KERNEL"
+```
+
+In the `LC_SEGMENT_64` entry for `__TEXT`, the relevant values for *this kernel* were:
+
+```text
+segname __TEXT
+vmaddr  0xffffff8000200000
+fileoff 0
+```
+
+The general mapping is:
+
+```text
+virtual_address = segment.vmaddr + (matching_file_offset - segment.fileoff)
+```
+
+For our result:
+
+```text
+0xffffff8000200000 + (0x2179df - 0x0) = 0xffffff80004179df
+```
+
+To **verify the containing segment and compute this without hardcoding `__TEXT` or its base**, this Python script reads Mach-O's 64-bit load commands directly:
+
+```python
+from pathlib import Path
+import struct
+
+kernel = (Path.home() / "KDK-analysis/extracted/KDK.pkg/Payload"
+          / "System/Library/Kernels/kernel")
+match_offset = 0x2179df
+data = kernel.read_bytes()
+
+if struct.unpack_from("<I", data, 0)[0] != 0xFEEDFACF:
+    raise SystemExit("Expected a thin 64-bit little-endian Mach-O kernel")
+
+ncmds = struct.unpack_from("<I", data, 16)[0]
+cursor = 32  # mach_header_64
+for _ in range(ncmds):
+    cmd, cmdsize = struct.unpack_from("<II", data, cursor)
+    if cmd == 0x19:  # LC_SEGMENT_64
+        name, vmaddr, vmsize, fileoff, filesize = struct.unpack_from(
+            "<16sQQQQ", data, cursor + 8
+        )
+        if fileoff <= match_offset < fileoff + filesize:
+            va = vmaddr + (match_offset - fileoff)
+            print("Segment:", name.rstrip(b"\0").decode())
+            print(f"File offset: 0x{match_offset:x}")
+            print(f"Virtual address: 0x{va:x}")
+            break
+    cursor += cmdsize
+else:
+    raise SystemExit("No file-backed Mach-O segment contains the match")
+```
+
+Our recorded mapping was:
 
 ```text
 Segment:         __TEXT
@@ -273,29 +351,33 @@ Virtual address: 0xffffff80004179df
 Section:         __text
 ```
 
-Finally, we looked up the address using the matching 15.7.3 KDK debug symbols:
+This is the **unslid virtual address in the KDK's own kernel**, not the original guest RIP. Kernel ASLR and differences between builds are precisely why we did not try to use the runtime RIP directly.
+
+### 4. Resolve the matching KDK address to a function
+
+The KDK's `kernel.dSYM` had the **same UUID as the KDK `kernel`**, allowing a meaningful lookup at the newly computed KDK address:
 
 ```bash
-xcrun atos -arch x86_64 \
-  -o kernel.dSYM/Contents/Resources/DWARF/kernel \
-  0xffffff80004179df
+KDK="$HOME/KDK-analysis/extracted/KDK.pkg/Payload"
+DSYM="$KDK/System/Library/Kernels/kernel.dSYM/Contents/Resources/DWARF/kernel"
+
+xcrun atos -arch x86_64 -o "$DSYM" 0xffffff80004179df
+xcrun dwarfdump --lookup 0xffffff80004179df "$DSYM"
 ```
 
-The result:
+`atos` returned:
 
 ```text
 vc_paint_char (in kernel) (video_console.c:1632)
 ```
 
-A further DWARF lookup identified the inlined helper function `vc_paint_char_32`, implemented in `osfmk/console/video_console.c`.
+The DWARF lookup showed that the address falls inside the inlined **`vc_paint_char_32`** helper in `osfmk/console/video_console.c`. This is XNU's **32-bit video-console character drawing path**. That also made the repeated bitwise operations and pixel-sized writes intelligible: we were observing code involved in writing console characters into a framebuffer, not an arbitrary cryptographic loop.
 
-**We had identified the kernel's video-console character renderer as the execution hotspot.** The instructions repeatedly consuming an entire virtual CPU core belonged to code responsible for drawing characters into a 32-bit framebuffer.
+**The complete evidence chain was:** repeatedly sampled guest RIP → raw guest instruction bytes → a distinctive 17-byte signature → one match in the nearby KDK kernel → Mach-O file-offset-to-virtual-address mapping → `atos`/DWARF lookup → `vc_paint_char_32`.
 
-One important qualification: **this was not exact symbolication of the guest's kernel**. The running VM used build `24G325`, while our KDK was from build `24G419`, and their kernel UUIDs differed. The unique instruction-byte match provided strong evidence that we had identified the corresponding routine, but it did not prove the surrounding machine code was identical across both builds.
+**Qualification:** This was a **unique code-signature match across different kernel builds**, *not* exact symbolication of the running 15.7.2 kernel. It identified a compelling execution hotspot and suggested a testable cause; it did not, on its own, prove why the guest took 57 minutes to boot.
 
-Nevertheless, it gave us a concrete, testable hypothesis: perhaps rendering verbose boot messages directly through the passed-through Radeon PRO W6600 framebuffer was responsible for the extraordinary boot delay.
-
-That led directly to our next experiment: **removing the `-v` boot argument from OpenCore**.
+That led to the decisive experiment: **remove only the `-v` boot argument**, leaving the known-working W6600 and OpenCore configuration otherwise intact.
 
 ## One boot argument fixed it
 
@@ -332,19 +414,19 @@ The evidence strongly supports that interpretation, **but we did not benchmark i
 
 ## Practical troubleshooting checklist
 
-1\. **Measure the supposedly stuck phase.** A screen that says `PCI configuration begin` does not prove the kernel is still enumerating PCI devices. Search logs for the corresponding end timestamp.
+1. **Measure the supposedly stuck phase.** A screen that says `PCI configuration begin` does not prove the kernel is still enumerating PCI devices. Search logs for the corresponding end timestamp.
 
-2\. **Compare one variable at a time.** A fast emulated display can isolate the physical framebuffer path, but avoid changing OpenCore, GPU settings, and kexts simultaneously.
+2. **Compare one variable at a time.** A fast emulated display can isolate the physical framebuffer path, but avoid changing OpenCore, GPU settings, and kexts simultaneously.
 
-3\. **Observe the VM from the host during the stall.** Check memory pressure, disk activity, and per-vCPU CPU utilization. A single hot vCPU changes the investigation completely.
+3. **Observe the VM from the host during the stall.** Check memory pressure, disk activity, and per-vCPU CPU utilization. A single hot vCPU changes the investigation completely.
 
-4\. **Inspect the guest execution hotspot.** QEMU's `info registers` and `x/` can provide useful data even when the monitor cannot disassemble instructions.
+4. **Inspect the guest execution hotspot.** QEMU's `info registers` and `x/` can provide useful data even when the monitor cannot disassemble instructions.
 
-5\. **Symbolicate carefully.** Confirm matching kernel and dSYM UUIDs. If the guest build's KDK is unavailable, a unique machine-code match in a nearby build is useful for *identification*, but not exact symbolication.
+5. **Symbolicate carefully.** Confirm matching kernel and dSYM UUIDs. If the guest build's KDK is unavailable, a unique machine-code match in a nearby build is useful for *identification*, but not exact symbolication.
 
-6\. **Test the smallest hypothesis.** Here, removing `-v`—not changing PCI settings, power management, or GPU properties—was the winning experiment.
+6. **Test the smallest hypothesis.** Here, removing `-v`—not changing PCI settings, power management, or GPU properties—was the winning experiment.
 
-7\. **Save the working baseline.** Back up both the VM and its EFI before updating OpenCore or macOS.
+7. **Save the working baseline.** Back up both the VM and its EFI before updating OpenCore or macOS.
 
 ## What this taught me
 
